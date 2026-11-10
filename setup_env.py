@@ -113,11 +113,15 @@ def prepare_model():
     quant_type = args.quant_type
     quant_embd = args.quant_embd
     if hf_url is not None:
-        # download the model
+        # download the model (skip if already present)
         model_dir = os.path.join(model_dir, SUPPORTED_HF_MODELS[hf_url]["model_name"])
         Path(model_dir).mkdir(parents=True, exist_ok=True)
-        logging.info(f"Downloading model {hf_url} from HuggingFace to {model_dir}...")
-        run_command(["huggingface-cli", "download", hf_url, "--local-dir", model_dir], log_step="download_model")
+        gguf_path = os.path.join(model_dir, "ggml-model-" + quant_type + ".gguf")
+        if os.path.exists(gguf_path) and os.path.getsize(gguf_path) > 0:
+            logging.info(f"Model already present at {gguf_path}, skipping download.")
+        else:
+            logging.info(f"Downloading model {hf_url} from HuggingFace to {model_dir}...")
+            run_command(["huggingface-cli", "download", hf_url, "--local-dir", model_dir], log_step="download_model")
     elif not os.path.exists(model_dir):
         logging.error(f"Model directory {model_dir} does not exist.")
         sys.exit(1)
@@ -211,7 +215,9 @@ def compile():
         logging.error(f"Arch {arch} is not supported yet")
         exit(0)
     logging.info("Compiling the code using CMake.")
-    run_command(["cmake", "-B", "build", *COMPILER_EXTRA_ARGS[arch], *OS_EXTRA_ARGS.get(platform.system(), []), "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"], log_step="generate_build_files")
+    cc = "clang" if shutil.which("clang") else "gcc"
+    cxx = "clang++" if shutil.which("clang++") else "g++"
+    run_command(["cmake", "-B", "build", *COMPILER_EXTRA_ARGS[arch], *OS_EXTRA_ARGS.get(platform.system(), []), f"-DCMAKE_C_COMPILER={cc}", f"-DCMAKE_CXX_COMPILER={cxx}"], log_step="generate_build_files")
     # run_command(["cmake", "--build", "build", "--target", "llama-cli", "--config", "Release"])
     run_command(["cmake", "--build", "build", "--config", "Release"], log_step="compile")
 
